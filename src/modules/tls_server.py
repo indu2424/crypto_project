@@ -1,54 +1,70 @@
 import ssl
 import socket
 import time
+import threading
 import sys
 sys.path.insert(0, "src/modules")
 from aes_module import load_key, decrypt
 
 HOST = "localhost"
 PORT = 8443
+server_running = False
 
-def start_server():
-    key = load_key()
+def handle_client(conn, key):
+    try:
+        with conn:
+            data = b""
+            conn.settimeout(2)
+            try:
+                while True:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    data += chunk
+            except:
+                pass
+            if len(data) > 32:
+                nonce      = data[:16]
+                tag        = data[16:32]
+                ciphertext = data[32:]
+                decrypted, _ = decrypt(key, ciphertext, nonce, tag)
+                conn.sendall(b"ACK: received")
+    except:
+        pass
 
-    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain("certs/server.crt", "certs/server.key")
-    context.minimum_version = ssl.TLSVersion.TLSv1_3
+def start_background_server():
+    global server_running
+    if server_running:
+        return
+    server_running = True
 
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        server.bind((HOST, PORT))
-        server.listen(10)
-        print(f"[SERVER] Listening on {HOST}:{PORT} with TLS 1.3...")
-
-        with context.wrap_socket(server, server_side=True) as tls_server:
-            while True:
-                conn, addr = tls_server.accept()
-                hs_time = time.perf_counter()
-                with conn:
-                    print(f"\n[SERVER] Connection from {addr}")
-                    print(f"[SERVER] TLS version : {conn.version()}")
-                    print(f"[SERVER] Cipher      : {conn.cipher()[0]}")
-
-                    data = b""
-                    while True:
-                        chunk = conn.recv(4096)
-                        if not chunk:
-                            break
-                        data += chunk
-
-                    nonce      = data[:16]
-                    tag        = data[16:32]
-                    ciphertext = data[32:]
-
-                    decrypted, dec_time = decrypt(key, ciphertext, nonce, tag)
-                    elapsed = (time.perf_counter() - hs_time) * 1000
-
-                    print(f"[SERVER] Decrypted   : {decrypted}")
-                    print(f"[SERVER] Decrypt time: {dec_time:.4f} ms")
-                    print(f"[SERVER] Total time  : {elapsed:.4f} ms")
-
-                    conn.sendall(b"ACK: message received and decrypted")
+    def run():
+        key = load_key()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain("certs/server.crt", "certs/server.key")
+        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind((HOST, PORT))
+            s.listen(50)
+            with context.wrap_socket(s, server_side=True) as tls_s:
+                while True:
+                    try:
+                        conn, _ = tls_s.accept()
+                        threading.Thread(
+                            target=handle_client,
+                            args=(conn, key),
+                            daemon=True
+                        ).start()
+                    except:
+                        pass
+    threading.Thread(target=run, daemon=True).start()
 
 if __name__ == "__main__":
-    start_server()
+    print("[SERVER] TLS 1.3 server running on localhost:8443 ...")
+    start_background_server()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("[SERVER] Stopped.")
