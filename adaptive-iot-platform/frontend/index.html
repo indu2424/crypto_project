@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adaptive Secure IoT Platform</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.3/chart.umd.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+header { background: #161b22; padding: 16px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 1.1rem; font-weight: 600; }
+.badge { background: #238636; color: #fff; font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; }
+.tabs { display: flex; background: #161b22; border-bottom: 1px solid #30363d; }
+.tab { padding: 12px 24px; cursor: pointer; font-size: 0.9rem; color: #8b949e; border-bottom: 2px solid transparent; transition: all 0.2s; }
+.tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+.tab:hover { color: #e6edf3; }
+.panel { display: none; padding: 24px; max-width: 1200px; margin: 0 auto; }
+.panel.active { display: block; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+.card h3 { font-size: 0.85rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 16px; }
+select, input[type=text], input[type=range] { background: #0d1117; border: 1px solid #30363d; color: #e6edf3; padding: 8px 12px; border-radius: 6px; width: 100%; margin-bottom: 12px; font-size: 0.9rem; }
+button { background: #238636; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: background 0.2s; }
+button:hover { background: #2ea043; }
+button.secondary { background: #21262d; border: 1px solid #30363d; }
+button.secondary:hover { background: #30363d; }
+.algo-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+.aes { background: #1f6feb33; color: #58a6ff; border: 1px solid #1f6feb; }
+.chacha { background: #38833333; color: #3fb950; border: 1px solid #388333; }
+.decision-log { background: #0d1117; border-radius: 6px; padding: 12px; font-size: 0.8rem; font-family: monospace; max-height: 200px; overflow-y: auto; color: #8b949e; }
+.decision-log .entry { padding: 4px 0; border-bottom: 1px solid #21262d; }
+.decision-log .entry span { color: #3fb950; }
+.tier-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 12px; }
+.tier-card { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 12px; text-align: center; font-size: 0.75rem; }
+.tier-card .name { color: #8b949e; margin-bottom: 6px; }
+.tier-card .score { font-size: 1.2rem; font-weight: 700; color: #f0c040; }
+.chat-box { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; height: 320px; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.msg { max-width: 75%; }
+.msg.sent { align-self: flex-end; text-align: right; }
+.msg.recv { align-self: flex-start; }
+.msg .bubble { background: #1f6feb22; border: 1px solid #1f6feb55; border-radius: 12px 12px 4px 12px; padding: 8px 14px; font-size: 0.9rem; }
+.msg.recv .bubble { background: #23823322; border-color: #38833355; border-radius: 12px 12px 12px 4px; }
+.msg .meta { font-size: 0.7rem; color: #8b949e; margin-top: 4px; font-family: monospace; }
+.chat-input { display: flex; gap: 8px; margin-top: 12px; }
+.chat-input input { flex: 1; }
+.stat-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 0.85rem; }
+.stat-row:last-child { border-bottom: none; }
+.stat-val { font-weight: 600; color: #58a6ff; }
+.winner-tag { background: #f0c04022; color: #f0c040; border: 1px solid #f0c04055; padding: 2px 8px; border-radius: 10px; font-size: 0.75rem; }
+canvas { max-height: 220px; }
+</style>
+</head>
+<body>
+<header>
+  <div>🔒</div>
+  <h1>Adaptive Secure IoT Communication Platform</h1>
+  <span class="badge">LIVE</span>
+  <span id="conn-status" style="margin-left:auto;font-size:0.8rem;color:#8b949e;">⚡ Connecting...</span>
+</header>
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('gateway')">🌐 Module 1 — Adaptive Gateway</div>
+  <div class="tab" onclick="switchTab('chat')">💬 Module 2 — Encrypted Chat</div>
+  <div class="tab" onclick="switchTab('profiler')">⚡ Module 3 — Energy Profiler</div>
+</div>
+
+<!-- MODULE 1 -->
+<div id="panel-gateway" class="panel active">
+  <div class="grid2">
+    <div class="card">
+      <h3>Send Encrypted Message</h3>
+      <input type="text" id="gw-message" value="Temperature: 24.5°C, Humidity: 60%">
+      <select id="gw-tier">
+        <option value="sensor">Tier 1 — Sensor Node (64KB RAM)</option>
+        <option value="microcontroller">Tier 2 — Microcontroller (128KB RAM)</option>
+        <option value="edge_lite" selected>Tier 3 — Edge Lite (256KB RAM)</option>
+        <option value="edge_gateway">Tier 4 — Edge Gateway (512KB RAM)</option>
+        <option value="gateway">Tier 5 — Full Gateway (2MB RAM)</option>
+      </select>
+      <div style="display:flex;gap:8px">
+        <button onclick="adaptiveEncrypt()">🔐 Encrypt (Adaptive)</button>
+        <button class="secondary" onclick="simulateAll()">🔄 Simulate All 5 Tiers</button>
+      </div>
+      <div style="margin-top:16px" id="gw-result">
+        <div class="stat-row"><span>Selected Algorithm</span><span id="gw-algo" class="algo-badge aes">—</span></div>
+        <div class="stat-row"><span>Decision Reason</span><span id="gw-reason" class="stat-val" style="font-size:0.75rem;max-width:60%;text-align:right">—</span></div>
+        <div class="stat-row"><span>Encryption Time</span><span id="gw-time" class="stat-val">—</span></div>
+        <div class="stat-row"><span>Security Score</span><span id="gw-score" class="stat-val">—</span></div>
+        <div class="stat-row"><span>Energy (mJ)</span><span id="gw-energy" class="stat-val">—</span></div>
+        <div class="stat-row"><span>Ciphertext (preview)</span></div>
+        <div id="gw-cipher" style="font-family:monospace;font-size:0.7rem;color:#3fb950;word-break:break-all;margin-top:6px;background:#0d1117;padding:8px;border-radius:4px">—</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Live Decision Log</h3>
+      <div class="decision-log" id="decision-log">
+        <div class="entry" style="color:#8b949e">Waiting for encryptions...</div>
+      </div>
+      <canvas id="gw-chart" style="margin-top:16px"></canvas>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>All 5 IoT Device Tiers — Live Simulation</h3>
+    <div class="tier-grid" id="tier-grid">
+      <div class="tier-card" id="tier-sensor"><div class="name">Tier 1 Sensor</div><div class="algo">—</div><div class="score">—</div></div>
+      <div class="tier-card" id="tier-microcontroller"><div class="name">Tier 2 MCU</div><div class="algo">—</div><div class="score">—</div></div>
+      <div class="tier-card" id="tier-edge_lite"><div class="name">Tier 3 Edge</div><div class="algo">—</div><div class="score">—</div></div>
+      <div class="tier-card" id="tier-edge_gateway"><div class="name">Tier 4 Gateway</div><div class="algo">—</div><div class="score">—</div></div>
+      <div class="tier-card" id="tier-gateway"><div class="name">Tier 5 Full GW</div><div class="algo">—</div><div class="score">—</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODULE 2 -->
+<div id="panel-chat" class="panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>Encrypted Messaging — TLS 1.3 Tunnel</h3>
+      <div class="chat-box" id="chat-box"></div>
+      <div class="chat-input">
+        <input type="text" id="chat-msg" placeholder="Type a message..." onkeydown="if(event.key==='Enter') sendMessage()">
+        <select id="chat-algo" style="width:auto;margin:0">
+          <option value="AES-256-GCM">AES-256-GCM</option>
+          <option value="ChaCha20-Poly1305">ChaCha20</option>
+        </select>
+        <button onclick="sendMessage()">Send 🔒</button>
+      </div>
+      <div style="margin-top:8px;font-size:0.75rem;color:#8b949e">
+        Your name: <input type="text" id="chat-name" value="Device A" style="width:120px;padding:4px 8px;display:inline;margin:0 0 0 8px">
+      </div>
+    </div>
+    <div class="card">
+      <h3>Cryptographic Details — Last Message</h3>
+      <div id="crypto-detail"><div style="color:#8b949e;font-size:0.85rem">Send a message to see encryption details.</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODULE 3 -->
+<div id="panel-profiler" class="panel">
+  <div class="grid2">
+    <div class="card">
+      <h3>Single Payload Comparison</h3>
+      <label style="font-size:0.85rem;color:#8b949e">Payload Size: <span id="size-label">1024</span> bytes</label>
+      <input type="range" id="payload-slider" min="64" max="16384" value="1024" step="64"
+             oninput="document.getElementById('size-label').textContent=this.value">
+      <button onclick="runComparison()" style="margin-top:8px">⚡ Compare Algorithms</button>
+      <div style="margin-top:16px" id="compare-result"></div>
+    </div>
+    <div class="card">
+      <h3>Full Benchmark (9 payload sizes)</h3>
+      <p style="font-size:0.8rem;color:#8b949e;margin-bottom:12px">Runs AES vs ChaCha20 across 64B–16KB payloads.</p>
+      <button onclick="runBenchmark()">📊 Run Full Benchmark</button>
+      <button class="secondary" style="margin-left:8px" onclick="window.open('/api/profile/export-csv')">📥 Download CSV</button>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h3>Benchmark Results — Energy & Speed</h3>
+    <canvas id="benchmark-chart"></canvas>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let gwChartInst, benchChartInst;
+const gwLabels=[], gwAES=[], gwChaCha=[];
+const benchLabels=[], benchAES=[], benchChaCha=[];
+
+socket.on("connect", () => {
+  document.getElementById("conn-status").textContent = "⚡ Connected — Live";
+  document.getElementById("conn-status").style.color = "#3fb950";
+});
+socket.on("disconnect", () => {
+  document.getElementById("conn-status").textContent = "● Disconnected";
+  document.getElementById("conn-status").style.color = "#da3633";
+});
+socket.on("new_message", (msg) => {
+  const box = document.getElementById("chat-box");
+  const isSent = msg.sender === document.getElementById("chat-name").value;
+  box.innerHTML += `<div class="msg ${isSent?'sent':'recv'}"><div class="bubble">${msg.plaintext}</div><div class="meta">${msg.sender} · ${msg.timestamp}</div></div>`;
+  box.scrollTop = box.scrollHeight;
+  document.getElementById("crypto-detail").innerHTML = `
+    <div class="stat-row"><span>Algorithm</span><span class="algo-badge ${msg.algorithm.includes('AES')?'aes':'chacha'}">${msg.algorithm}</span></div>
+    <div class="stat-row"><span>Enc Time</span><span class="stat-val">${msg.time_ms} ms</span></div>
+    <div class="stat-row"><span>Energy</span><span class="stat-val">${msg.energy_mj} mJ</span></div>
+    <div class="stat-row"><span>Nonce</span></div>
+    <div style="font-family:monospace;font-size:0.7rem;color:#f0c040;word-break:break-all;background:#0d1117;padding:8px;border-radius:4px;margin-top:4px">${msg.nonce}</div>
+    <div class="stat-row" style="margin-top:8px"><span>Auth Tag</span></div>
+    <div style="font-family:monospace;font-size:0.7rem;color:#3fb950;word-break:break-all;background:#0d1117;padding:8px;border-radius:4px;margin-top:4px">${msg.tag}</div>
+    <div class="stat-row" style="margin-top:8px"><span>Ciphertext (truncated)</span></div>
+    <div style="font-family:monospace;font-size:0.7rem;color:#58a6ff;word-break:break-all;background:#0d1117;padding:8px;border-radius:4px;margin-top:4px">${msg.ciphertext}</div>`;
+});
+socket.on("simulation_complete", (data) => {
+  data.tiers.forEach(t => {
+    const card = document.getElementById("tier-"+t.tier);
+    if (!card) return;
+    card.querySelector(".algo").innerHTML = `<span class="algo-badge ${t.algorithm.includes('AES')?'aes':'chacha'}" style="font-size:0.65rem">${t.algorithm}</span>`;
+    card.querySelector(".score").textContent = t.security_score;
+    card.style.borderColor = t.algorithm.includes('AES') ? '#1f6feb' : '#388333';
+  });
+});
+socket.on("benchmark_complete", (data) => {
+  data.results.forEach(r => { benchLabels.push(r.payload_size+"B"); benchAES.push(r.aes.energy_mj*1000); benchChaCha.push(r.chacha.energy_mj*1000); });
+  renderBenchChart();
+});
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const tabs=['gateway','chat','profiler'];
+  document.querySelectorAll('.tab')[tabs.indexOf(name)].classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+}
+async function adaptiveEncrypt() {
+  const res = await fetch("/api/adaptive/encrypt", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:document.getElementById("gw-message").value,device_tier:document.getElementById("gw-tier").value})});
+  const d = await res.json();
+  const isAES = d.selected_algorithm.includes("AES");
+  document.getElementById("gw-algo").textContent = d.selected_algorithm;
+  document.getElementById("gw-algo").className = "algo-badge "+(isAES?"aes":"chacha");
+  document.getElementById("gw-reason").textContent = d.reason;
+  document.getElementById("gw-time").textContent = d.time_ms+" ms";
+  document.getElementById("gw-score").textContent = d.security_score+" / 100";
+  document.getElementById("gw-energy").textContent = d.energy.energy_mj+" mJ";
+  document.getElementById("gw-cipher").textContent = d.ciphertext.substring(0,80)+"...";
+  const log = document.getElementById("decision-log");
+  log.innerHTML = `<div class="entry"><span>[${new Date().toLocaleTimeString()}]</span> ${document.getElementById("gw-tier").value} → ${d.selected_algorithm} (${d.reason})</div>`+log.innerHTML;
+  gwLabels.push(new Date().toLocaleTimeString());
+  if(isAES){gwAES.push(d.time_ms);gwChaCha.push(null);}else{gwAES.push(null);gwChaCha.push(d.time_ms);}
+  renderGwChart();
+}
+async function simulateAll() {
+  await fetch("/api/adaptive/simulate",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+}
+function sendMessage() {
+  const msg = document.getElementById("chat-msg").value.trim();
+  if(!msg) return;
+  socket.emit("send_message",{message:msg,algorithm:document.getElementById("chat-algo").value,sender:document.getElementById("chat-name").value});
+  document.getElementById("chat-msg").value="";
+}
+async function runComparison() {
+  const res = await fetch("/api/profile/compare",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({payload_size:document.getElementById("payload-slider").value})});
+  const d = await res.json();
+  document.getElementById("compare-result").innerHTML = `
+    <div class="stat-row"><span>AES-256-GCM Time</span><span class="stat-val">${d.aes.enc_time_ms} ms</span></div>
+    <div class="stat-row"><span>AES-256-GCM Energy</span><span class="stat-val">${d.aes.energy_mj} mJ</span></div>
+    <div class="stat-row"><span>AES CPU Cycles</span><span class="stat-val">${d.aes.cpu_cycles.toLocaleString()}</span></div>
+    <div class="stat-row"><span>ChaCha20 Time</span><span class="stat-val">${d.chacha.enc_time_ms} ms</span></div>
+    <div class="stat-row"><span>ChaCha20 Energy</span><span class="stat-val">${d.chacha.energy_mj} mJ</span></div>
+    <div class="stat-row"><span>ChaCha CPU Cycles</span><span class="stat-val">${d.chacha.cpu_cycles.toLocaleString()}</span></div>
+    <div class="stat-row"><span>Speed Winner</span><span class="winner-tag">🏆 ${d.winner_speed}</span></div>
+    <div class="stat-row"><span>Energy Winner</span><span class="winner-tag">⚡ ${d.winner_energy}</span></div>`;
+}
+async function runBenchmark() {
+  benchLabels.length=0; benchAES.length=0; benchChaCha.length=0;
+  await fetch("/api/profile/benchmark",{method:"POST",headers:{"Content-Type":"application/json"},body:"{}"});
+}
+function renderGwChart() {
+  const ctx=document.getElementById("gw-chart").getContext("2d");
+  if(gwChartInst) gwChartInst.destroy();
+  gwChartInst=new Chart(ctx,{type:"line",data:{labels:gwLabels.slice(-10),datasets:[{label:"AES-256-GCM (ms)",data:gwAES.slice(-10),borderColor:"#58a6ff",backgroundColor:"#58a6ff22",tension:0.3,spanGaps:true},{label:"ChaCha20 (ms)",data:gwChaCha.slice(-10),borderColor:"#3fb950",backgroundColor:"#3fb95022",tension:0.3,spanGaps:true}]},options:{plugins:{legend:{labels:{color:"#8b949e"}}},scales:{x:{ticks:{color:"#8b949e"}},y:{ticks:{color:"#8b949e"}}}}});
+}
+function renderBenchChart() {
+  const ctx=document.getElementById("benchmark-chart").getContext("2d");
+  if(benchChartInst) benchChartInst.destroy();
+  benchChartInst=new Chart(ctx,{type:"bar",data:{labels:benchLabels,datasets:[{label:"AES-256-GCM Energy (µJ)",data:benchAES,backgroundColor:"#1f6feb88",borderColor:"#58a6ff",borderWidth:1},{label:"ChaCha20-Poly1305 Energy (µJ)",data:benchChaCha,backgroundColor:"#38833388",borderColor:"#3fb950",borderWidth:1}]},options:{plugins:{legend:{labels:{color:"#8b949e"}}},scales:{x:{ticks:{color:"#8b949e"}},y:{ticks:{color:"#8b949e"},title:{display:true,text:"Energy (µJ)",color:"#8b949e"}}}}});
+}
+</script>
+</body>
+</html>
