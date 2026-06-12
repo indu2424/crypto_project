@@ -1,3 +1,4 @@
+from gevent import monkey; monkey.patch_all()
 from flask import Flask, request, jsonify, render_template_string, send_file
 from flask_socketio import SocketIO, emit, join_room
 import sys, time, os, threading, io, csv, json, random
@@ -9,7 +10,7 @@ import psutil
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.urandom(24).hex()
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
 
 # ── Key management ────────────────────────────────────────────────────────────
 def _get_key(env_var, path):
@@ -87,7 +88,7 @@ def make_smart_home_payload(dev):
 
 def select_algo(payload_bytes, override=None):
     if override: return override, f"Manual override → {override.upper()}"
-    cpu = psutil.cpu_percent(interval=0.05)
+    cpu = psutil.cpu_percent()
     if payload_bytes < 1024:
         return "chacha", f"Payload {payload_bytes}B < 1KB → ChaCha20 (faster on low-power device)"
     elif payload_bytes < 10240 and cpu > 70:
@@ -101,7 +102,7 @@ def simulate_device(dev):
     payload = make_smart_home_payload(dev)
     algo, reason = select_algo(len(payload))
     ct,n,t,enc_ms,dec_ms,dec = do_encrypt(payload, algo)
-    cpu = round(psutil.cpu_percent(interval=0.02), 1)
+    cpu = round(_get_cpu(), 1)
     entry = {
         "device": dev["id"], "type": dev["type"], "tier": dev["tier"],
         "icon": dev["icon"], "room": dev["room"],
@@ -723,13 +724,25 @@ def myinfo():
     ip = request.headers.get("X-Forwarded-For", request.remote_addr).split(",")[0].strip()
     return jsonify({"ip": ip})
 
+# CPU cache to avoid blocking reads
+_cpu_cache = [0.0]
+_cpu_ts = [0.0]
+
+def _get_cpu():
+    import time as _t
+    if _t.time() - _cpu_ts[0] > 3.0:  # refresh every 3 seconds only
+        _cpu_cache[0] = psutil.cpu_percent()
+        _cpu_ts[0] = _t.time()
+    return _cpu_cache[0]
+
 @app.route("/api/feed")
 def feed():
-    # Always generate fresh device data (Render-compatible)
-    for dev in DEVICES:
+    # Simulate 2 random devices per poll — keeps Render CPU low
+    import random as _r
+    for dev in _r.sample(DEVICES, min(2, len(DEVICES))):
         try: simulate_device(dev)
         except: pass
-    cpu = round(psutil.cpu_percent(interval=0.1), 1)
+    cpu = _get_cpu()
     return jsonify({"total": len(device_log), "cpu": cpu, "devices": list(device_log[:20])})
 
 @app.route("/api/cmd", methods=["POST"])
@@ -771,11 +784,11 @@ def profile():
     for scenario, dev, size in SCENARIOS:
         msg = "A"*size
         ae,ad,ce,cd = [],[],[],[]
-        for _ in range(5):
+        for _ in range(3):
             ct,n,t,e,d,_ = aes_encrypt(msg); ae.append(e); ad.append(d)
             ct,n,t,e,d,_ = cha_encrypt(msg); ce.append(e); cd.append(d)
         avg = lambda x: round(sum(x)/len(x),4)
-        cpu = round(psutil.cpu_percent(interval=0.1),1)
+        cpu = round(psutil.cpu_percent(),1)
         CPU_W=0.5; IDLE_W=0.05
         def uj(ms): return round((IDLE_W+(CPU_W*cpu/100))*(ms/1000)*1_000_000,4)
         a_enc=avg(ae); c_enc=avg(ce)
